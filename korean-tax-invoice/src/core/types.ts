@@ -117,6 +117,12 @@ export type IssuanceStatus =
 
 export interface StatusResult {
   status: IssuanceStatus
+  /**
+   * 관리번호로 조회했을 때 프로바이더가 알려준 issuanceKey.
+   *
+   * 응답을 못 받아 issuanceKey 가 없는 쪽이 이후 상태를 따라가려면 이 값이 필요하다.
+   */
+  issuanceKey?: string
   /** 국세청 승인번호. 발행 완료 후에만 존재한다. */
   ntsConfirmNum?: string
   /** 실패 사유. */

@@ -18,4 +18,11 @@
 export * from './core/types.js'
 export * from './core/rules.js'
 export * from './core/validate.js'
-export { BoltaProvider, BOLTA_WEBHOOK_IPS, type BoltaOptions } from './providers/bolta/index.js'
+export {
+  BoltaProvider,
+  BOLTA_WEBHOOK_IPS,
+  findIssuer,
+  type BoltaIssuer,
+  type BoltaOptions,
+  type BoltaPdf,
+} from './providers/bolta/index.js'

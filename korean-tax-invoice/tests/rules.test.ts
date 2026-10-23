@@ -5,6 +5,8 @@ import {
   formatBusinessNumber,
   formatKstDate,
   calculateTax,
+  itemTax,
+  invoiceTotals,
   buildClientReferenceId,
 } from '../src/core/rules.js'
 
@@ -80,7 +82,70 @@ describe('calculateTax', () => {
   })
 })
 
+describe('itemTax — 실제로 보내는 세액', () => {
+  it('과세는 10%', () => {
+    expect(itemTax({ supplyCost: 100_000 }, 'TAXABLE')).toBe(10_000)
+  })
+
+  it('영세율은 0', () => {
+    expect(itemTax({ supplyCost: 100_000 }, 'ZERO_RATE')).toBe(0)
+  })
+
+  it('면세는 세액 칸이 없어 null', () => {
+    // 볼타는 면세에 0 을 보내면 거절한다.
+    expect(itemTax({ supplyCost: 100_000 }, 'TAX_FREE')).toBeNull()
+  })
+
+  it('세액을 직접 적었으면 그 값을 쓴다', () => {
+    expect(itemTax({ supplyCost: 100_000, tax: 9_999 }, 'TAXABLE')).toBe(9_999)
+  })
+})
+
+describe('invoiceTotals — 확인 화면 금액', () => {
+  const items = [{ supplyCost: 100_000 }, { supplyCost: 50_000 }]
+
+  it('과세는 세액을 더한다', () => {
+    expect(invoiceTotals(items, 'TAXABLE')).toEqual({ supplyCost: 150_000, tax: 15_000, total: 165_000 })
+  })
+
+  it('영세율·면세는 세액 없이 합계가 공급가액과 같다', () => {
+    // 화면만 10% 로 계산하던 시절에는 여기가 165,000원으로 보였다.
+    // 사람은 틀린 금액을 보고 승인하고, 볼타에는 150,000원이 나갔다.
+    expect(invoiceTotals(items, 'ZERO_RATE')).toEqual({ supplyCost: 150_000, tax: 0, total: 150_000 })
+    expect(invoiceTotals(items, 'TAX_FREE')).toEqual({ supplyCost: 150_000, tax: 0, total: 150_000 })
+  })
+})
+
 describe('buildClientReferenceId', () => {
+  it('invoiceId 가 비면 던진다', () => {
+    // 그대로 두면 "kti-undefined" 가 나와 서로 다른 청구 건이 관리번호를 나눠 쓴다.
+    expect(() => buildClientReferenceId('kti', undefined as unknown as string)).toThrow(/invoiceId/)
+    expect(() => buildClientReferenceId('kti', '')).toThrow(/invoiceId/)
+    expect(() => buildClientReferenceId('kti', '   ')).toThrow(/invoiceId/)
+  })
+
+  it('숫자 invoiceId 도 받는다', () => {
+    // JSON 요청 파일에서는 숫자로 올 수 있다.
+    expect(buildClientReferenceId('myapp', 1001)).toBe('myapp-1001')
+  })
+
+  it('객체 invoiceId 는 던진다', () => {
+    // String({}) 는 "[object Object]" 라 kti-undefined 와 같은 공유 키가 된다.
+    expect(() => buildClientReferenceId('kti', {} as unknown as string)).toThrow(/invoiceId/)
+  })
+
+  it('접두어가 비면 접두어를 탓한다', () => {
+    expect(() => buildClientReferenceId('  ', 'inv_1')).toThrow(/referencePrefix/)
+  })
+
+  it('헤더에 못 싣는 문자는 던진다', () => {
+    // 한글이 섞이면 요청이 나가기도 전에 실패하고, 그 실패가 "모름"으로
+    // 분류돼 재요청 금지와 "접수 안 됨" 조회 사이를 끝없이 돈다.
+    expect(() => buildClientReferenceId('kti', '2026-09-고객사')).toThrow(/영문·숫자/)
+    expect(() => buildClientReferenceId('kti', 'inv 1')).toThrow(/영문·숫자/)
+    expect(buildClientReferenceId('scenic', 'slack-1792774165.512439')).toBe('scenic-slack-1792774165.512439')
+  })
+
   it('같은 입력에 같은 값을 준다', () => {
     // 재시도할 때 같은 값이어야 프로바이더가 중복을 막아준다.
     // 시각이나 난수를 섞으면 멱등성이 아예 동작하지 않는다.

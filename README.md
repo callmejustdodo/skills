@@ -158,7 +158,15 @@ Trigger by saying things like:
 - "고객사에 9월 이용료 50만원 세금계산서 발행해줘"
 - "볼타로 세금계산서 발행하려는데 준비됐는지 봐줘"
 
-Vendored from [sdkfile/korean-tax-invoice](https://github.com/sdkfile/korean-tax-invoice) (MIT, commit `74eaddf`), with one local change: the scripts load `korean-tax-invoice/.env` on their own. Build once after cloning — the scripts import `dist/`:
+Vendored from [sdkfile/korean-tax-invoice](https://github.com/sdkfile/korean-tax-invoice) (MIT, commit `74eaddf`), with local changes:
+
+- The scripts load `korean-tax-invoice/.env` on their own.
+- The confirmation screen computes tax with the same function as the payload, so zero-rate and tax-free invoices show 0원 tax.
+- `issue.mjs` requires `invoiceId` and `"verified": true`, checks the supplier against Bolta's registered issuers before submitting, and exits 0/1/2/3 (accepted / not submitted / unknown / already accepted under this 관리번호).
+- `check-status.mjs --ref` reports the issuanceKey and the final status, not just "submitted".
+- `download-pdf.mjs` saves an issued invoice's PDF (Bolta's download links last 5 minutes).
+
+Build once after cloning — the scripts import `dist/`:
 
 ```bash
 cd korean-tax-invoice && npm install && npm run build

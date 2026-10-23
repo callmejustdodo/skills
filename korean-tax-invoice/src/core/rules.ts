@@ -78,13 +78,64 @@ export function calculateTax(supplyCost: number, taxType: string = 'TAXABLE'): n
 }
 
 /**
+ * 품목 하나의 세액 — 프로바이더에 실제로 보내는 값.
+ *
+ * 면세는 세액 칸 자체가 없어서 null 이다(볼타는 0 을 거절한다). 확인 화면도
+ * 이 함수로 계산해야 사람이 본 금액과 실제로 나가는 금액이 같다. 화면만 따로
+ * 10% 로 계산하면 영세율·면세 계산서가 세액이 붙은 채로 보이고, 사람은 틀린
+ * 금액을 보고 승인하게 된다.
+ */
+export function itemTax(
+  item: { supplyCost: number; tax?: number },
+  taxType: string = 'TAXABLE',
+): number | null {
+  if (taxType === 'TAX_FREE') return null
+  return item.tax ?? calculateTax(item.supplyCost, taxType)
+}
+
+/** 공급가액·세액·합계. 확인 화면에 보여줄 값이다. */
+export function invoiceTotals(
+  items: { supplyCost: number; tax?: number }[],
+  taxType: string = 'TAXABLE',
+): { supplyCost: number; tax: number; total: number } {
+  const supplyCost = items.reduce((sum, it) => sum + it.supplyCost, 0)
+  const tax = items.reduce((sum, it) => sum + (itemTax(it, taxType) ?? 0), 0)
+  return { supplyCost, tax, total: supplyCost + tax }
+}
+
+/**
  * 멱등성 키를 만든다.
  *
  * 같은 청구 건을 재시도할 때 **같은 값**이 나와야 프로바이더가 중복을
  * 막아준다. 재시도마다 새로 만들면 멱등성이 아예 동작하지 않는다.
  *
  * 그래서 시각이나 난수를 섞지 않는다 — 발행 대상의 고유 id 만 쓴다.
+ *
+ * 재료가 비면 던진다. 그대로 두면 "kti-undefined" 같은 값이 나오고, 서로 다른
+ * 청구 건이 같은 관리번호를 나눠 쓰게 된다.
+ *
+ * 쓸 수 있는 문자도 제한한다. 관리번호는 HTTP 헤더로 나가는데, 한글처럼 헤더에
+ * 못 싣는 문자가 있으면 요청이 나가기도 전에 실패한다. 그 실패는 "응답을 못
+ * 받음"으로 분류돼 재요청 금지가 뜨고, 조회하면 "접수 안 됨"이 나와 끝없이 돈다.
  */
-export function buildClientReferenceId(prefix: string, invoiceId: string): string {
-  return `${prefix}-${invoiceId}`
+export function buildClientReferenceId(prefix: string, invoiceId: string | number): string {
+  const id = typeof invoiceId === 'number' && Number.isFinite(invoiceId) ? String(invoiceId) : invoiceId
+  if (typeof id !== 'string' || !id.trim()) {
+    throw new Error(
+      '관리번호를 만들 청구 건 식별자(invoiceId)가 없습니다. 재시도 때 같은 관리번호를 써야 중복 발행이 막히므로 필수입니다.',
+    )
+  }
+  if (typeof prefix !== 'string' || !prefix.trim()) {
+    throw new Error('관리번호 접두어(referencePrefix)가 비어 있습니다.')
+  }
+  const ref = `${prefix}-${id}`
+  if (!REFERENCE_ID_PATTERN.test(ref)) {
+    throw new Error(
+      `관리번호에는 영문·숫자와 . _ : - 만 쓸 수 있습니다 (${ref}). 요청 헤더로 나가는 값이라 한글이나 공백이 있으면 요청 자체가 실패합니다.`,
+    )
+  }
+  return ref
 }
+
+/** 관리번호에 쓸 수 있는 문자. 헤더에 안전하게 실리는 것만 허용한다. */
+const REFERENCE_ID_PATTERN = /^[A-Za-z0-9._:-]+$/

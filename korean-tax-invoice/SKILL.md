@@ -77,9 +77,14 @@ terminal(command="node scripts/preflight.mjs")
 | **공급받는자 담당자 이메일** | **등록증에 없다.** 메일 발신자나 별도 입력 |
 | 품목·금액 | 청구 내역 |
 | 작성일자 | 보통 청구 기간 말일. 미래 날짜는 볼타가 거절한다 |
+| `invoiceId` | 청구 건마다 고유한 값. 재시도할 때는 **같은 값**. 없으면 막힌다 |
+| `"verified": true` | 사람이 거래처 정보를 확인했을 때만 넣는다. 없으면 막힌다 |
 
 담당자 이메일을 놓치는 사고가 흔하다. 사업자등록증에는 이메일이 적혀 있지
 않아서 등록증만 보고 채우면 반드시 빠진다.
+
+공급자는 볼타에 등록한 발급자와 같아야 한다. 예제의 공급자(널포인터스튜디오)를
+그대로 두면 4단계에서 접수 전에 막힌다 — 등록된 발급자를 알려준다.
 
 ### 3. 검증 (발행 안 함)
 
@@ -89,6 +94,8 @@ terminal(command="node scripts/issue.mjs <요청파일>")
 
 `--confirm` 이 없으면 검증만 하고 무엇을 보낼지 보여준다. **이 출력을 사용자에게
 그대로 보여주고 확인받아라.** 금액과 수신처가 맞는지는 사람이 봐야 한다.
+세액·합계는 볼타에 실제로 보내는 값과 같은 함수로 계산하고, 구분(청구/영수)·
+과세유형·관리번호도 함께 나온다.
 
 **완료 기준:** 차단 사유가 없고, 사용자가 내용을 확인했다.
 
@@ -98,7 +105,21 @@ terminal(command="node scripts/issue.mjs <요청파일>")
 terminal(command="node scripts/issue.mjs <요청파일> --confirm")
 ```
 
-성공하면 `issuanceKey` 와 관리번호가 나온다. **둘 다 기록해라.**
+접수 전에 공급자가 볼타에 등록된 발급자인지 대조한다. 성공하면 `issuanceKey` 와
+관리번호가 나온다. **둘 다 기록해라.**
+
+종료 코드로 다음 행동을 정한다.
+
+```
+0  접수 완료
+1  접수하지 않았다. 고쳐서 다시 실행해도 안전하다
+2  접수 여부를 모른다. 다시 실행하지 말고 관리번호로 조회한다
+3  이 관리번호로 이미 접수된 건이 있다. 다시 보내지 않는다
+```
+
+3 은 같은 관리번호에 다른 내용을 보냈을 때 난다(내용을 고쳤거나, 작성일자를
+비워 둔 파일을 다음 날 다시 돌렸을 때). **invoiceId 를 바꿔 다시 보내면 두 번째
+계산서가 나간다.** 내용을 바로잡아야 하면 아래 "잘못 발행했을 때"를 따른다.
 
 **완료 기준:** "접수 완료" 와 issuanceKey 출력.
 
@@ -111,6 +132,21 @@ terminal(command="node scripts/check-status.mjs <issuanceKey>")
 ```
 
 **완료 기준:** 상태가 `ISSUED` 또는 `FAILED` 로 확정된다.
+
+### 6. PDF 받기 (선택)
+
+`ISSUED` 가 된 뒤에만 된다. 포인트를 쓰지 않는다.
+
+```
+terminal(command="node scripts/download-pdf.mjs <issuanceKey> --out <폴더>")
+```
+
+볼타의 다운로드 주소는 5분만 유효해서 링크를 넘기지 않고 파일로 받는다.
+PDF 를 만드는 중이면 볼타가 알려준 시간만큼 기다렸다 다시 묻는다(최대 2분).
+**테스트 키는 이 계산서가 아니라 볼타의 샘플 PDF 를 준다** — 비고란에 "TEST 키
+샘플"이라고 적혀 있다.
+
+**완료 기준:** 마지막 줄에 `저장: <경로>` 가 나온다.
 
 ## 사고를 막는 세 가지 규칙
 
@@ -138,8 +174,9 @@ ProviderUncertainError   타임아웃·5xx.     → 재요청 금지
 terminal(command="node scripts/check-status.mjs --ref <관리번호>")
 ```
 
-`SUBMITTED` 면 이미 접수된 것이니 기다린다. `UNKNOWN` 이면 접수되지 않았으니
-다시 시도해도 된다.
+접수됐으면 `issuanceKey` 를 함께 알려주고, 발행까지 끝났으면 `ISSUED` 로 나온다.
+`SUBMITTED` 면 접수는 됐고 결과 대기 중이니 기다린다. `UNKNOWN` 이면 접수되지
+않았으니 다시 시도해도 된다.
 
 ### 멱등성 키는 재사용한다
 
@@ -147,7 +184,8 @@ terminal(command="node scripts/check-status.mjs --ref <관리번호>")
 막아준다. 재시도마다 새로 만들면 멱등성이 아예 동작하지 않는다.
 
 `buildClientReferenceId(prefix, invoiceId)` 가 그래서 시각이나 난수를 섞지
-않는다.
+않는다. `invoiceId` 가 비면 던진다 — 비어 있으면 모든 요청이 같은 관리번호를
+나눠 쓰게 된다.
 
 ## Pitfalls
 
@@ -216,8 +254,10 @@ terminal(command="node scripts/check-status.mjs --ref <관리번호>")
 terminal(command="npm run check")
 ```
 
-타입 검사 + 테스트 50개(핵심 로직 28 + 볼타 22). 네트워크를 타지 않는다 —
-볼타 테스트는 `fetch` 를 목으로 바꿔 페이로드와 오류 분기를 확인한다.
+타입 검사 + 테스트 99개(핵심 로직 39 + 볼타 38 + 스크립트 22). 볼타에 가지
+않는다 — 볼타 테스트는 `fetch` 를 목으로 바꿔 페이로드와 오류 분기를 확인하고,
+스크립트 테스트는 `dist/` 를 새로 빌드한 뒤 `issue.mjs` 를 돌려 확인 화면과
+종료 코드를 본다. `--confirm` 은 로컬 스텁 서버로만 보낸다.
 
 실제 발행 흐름은 테스트 키로 확인한다 — 가상 발행이라 국세청에 가지 않는다.
 
@@ -233,7 +273,8 @@ terminal(command="node scripts/issue.mjs examples/request.json")
 ```ts
 import { BoltaProvider, validateIssueRequest, buildClientReferenceId } from 'korean-tax-invoice'
 
-const check = validateIssueRequest(request, { verified: company.verifiedAt !== null })
+// != null: verifiedAt 이 undefined 여도 "확인 안 됨"으로 막는다
+const check = validateIssueRequest(request, { verified: company.verifiedAt != null })
 if (!check.ok) return { blocked: check.issues }   // 사유를 사람에게 보여준다
 
 const provider = new BoltaProvider()

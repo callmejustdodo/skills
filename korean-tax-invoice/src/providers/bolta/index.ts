@@ -27,7 +27,7 @@ import {
   type WebhookEvent,
   type WebhookSenderInput,
 } from '../../core/types.js'
-import { calculateTax, formatKstDate, normalizeBusinessNumber } from '../../core/rules.js'
+import { formatKstDate, itemTax, normalizeBusinessNumber } from '../../core/rules.js'
 
 const DEFAULT_BASE_URL = 'https://xapi.bolta.io'
 
@@ -69,6 +69,24 @@ interface BoltaIssuePayload {
   purpose: string
   taxType: string
   description?: string
+}
+
+/**
+ * 세금계산서 PDF 조회 결과.
+ *
+ * READY 의 downloadUrl 은 5분만 유효하다. 링크로 넘기지 말고 바로 내려받아라.
+ * PENDING 이면 retryAfterSeconds 뒤 같은 조회를 다시 한다.
+ */
+export type BoltaPdf =
+  | { status: 'READY'; downloadUrl: string; expiresAt?: string; filename?: string }
+  | { status: 'PENDING'; retryAfterSeconds: number }
+
+/** GET /v1/issuers 의 항목. 쓰는 필드만 적었다. */
+export interface BoltaIssuer {
+  identificationNumber: string
+  organizationName: string
+  representativeName?: string
+  certificate?: { expiresAt: string } | null
 }
 
 export interface BoltaOptions {
@@ -158,7 +176,8 @@ export class BoltaProvider implements TaxInvoiceProvider {
         ...(it.quantity !== undefined ? { quantity: it.quantity } : {}),
         supplyCost: it.supplyCost,
         // TAX_FREE 는 반드시 null 이어야 한다. 0 을 보내면 거절된다.
-        tax: taxType === 'TAX_FREE' ? null : (it.tax ?? calculateTax(it.supplyCost, taxType)),
+        // 확인 화면도 같은 itemTax() 를 쓴다 — 보여준 세액과 보내는 세액이 같아야 한다.
+        tax: itemTax(it, taxType),
       })),
       date: writeDate,
       purpose: req.purpose ?? 'CLAIM',
@@ -220,21 +239,24 @@ export class BoltaProvider implements TaxInvoiceProvider {
       throw new ProviderRejectedError(message || `볼타 오류 ${res.status}`, res.status, code)
     }
 
-    const body = (await res.json()) as { issuanceKey?: string }
-    if (!body.issuanceKey) {
-      // 200 인데 키가 없다 — 접수 여부가 불분명하다.
+    // 2xx 를 받았으니 접수됐을 수 있다. 본문을 못 읽거나 모양이 이상해도
+    // "거절"이 아니라 "모름"이다. JSON null 이나 문자열이 아닌 키도 여기서 걸린다.
+    const body = (await res.json().catch(() => null)) as { issuanceKey?: unknown } | null
+    const issuanceKey = body && typeof body === 'object' ? body.issuanceKey : undefined
+    if (typeof issuanceKey !== 'string' || !issuanceKey) {
       throw new ProviderUncertainError(
         '볼타가 issuanceKey 를 주지 않았습니다. 조회로 확인하세요.',
         clientReferenceId,
       )
     }
 
-    return { issuanceKey: body.issuanceKey }
+    return { issuanceKey }
   }
 
   async getStatus(issuanceKey: string): Promise<StatusResult> {
     const res = await this.doFetch(`${this.baseUrl}/v1/taxInvoices/${issuanceKey}`, {
       headers: { Authorization: this.authHeader() },
+      signal: AbortSignal.timeout(this.timeoutMs),
     })
 
     if (res.status === 404) return { status: 'UNKNOWN' }
@@ -290,6 +312,7 @@ export class BoltaProvider implements TaxInvoiceProvider {
 
     const res = await this.doFetch(url.toString(), {
       headers: { Authorization: this.authHeader() },
+      signal: AbortSignal.timeout(this.timeoutMs),
     })
 
     if (res.status === 404) return { status: 'UNKNOWN' }
@@ -326,8 +349,89 @@ export class BoltaProvider implements TaxInvoiceProvider {
 
     if (!body.issuanceKey) return { status: 'UNKNOWN' }
 
+    // 접수는 확인됐다. 발행까지 끝났는지는 issuanceKey 로 다시 물어야 안다.
+    // 여기서 멈추면 발행이 끝난 건도 영원히 SUBMITTED 로 보이고, 응답을 못
+    // 받은 쪽은 issuanceKey 도 없어서 더 확인할 길이 없다.
+    //
     // message 를 failureReason 에 넣지 않는다 — 실패가 아닌데 실패처럼 읽힌다.
-    return { status: 'SUBMITTED' }
+    const submitted: StatusResult = { status: 'SUBMITTED', issuanceKey: body.issuanceKey }
+    try {
+      const issued = await this.getStatus(body.issuanceKey)
+      // 발행 조회는 발행 완료 건만 돌려준다. UNKNOWN 은 "아직 처리 중"이다.
+      return issued.status === 'UNKNOWN' ? submitted : { ...issued, issuanceKey: body.issuanceKey }
+    } catch {
+      // 후속 조회가 실패해도 접수됐다는 사실은 그대로다. "재요청 금지"인
+      // SUBMITTED 로 답하는 게 안전한 쪽이다.
+      return submitted
+    }
+  }
+
+  /**
+   * 발행 완료된 세금계산서의 PDF 다운로드 주소를 조회한다. 포인트를 쓰지 않는다.
+   *
+   * 첫 호출이 PDF 생성을 시작하고, 준비될 때까지는 202 + Retry-After 가 온다.
+   * 동시에 만드는 PDF 가 많으면 429 + Retry-After 다. 둘 다 "나중에 다시"라
+   * PENDING 으로 돌려준다. 발행 전·발행 실패(400), 없는 키(404) 등은 던진다.
+   *
+   * 테스트 키는 실제 계산서가 아니라 볼타의 샘플 PDF 주소를 준다.
+   */
+  async getPdf(issuanceKey: string): Promise<BoltaPdf> {
+    const res = await this.doFetch(`${this.baseUrl}/v1/taxInvoices/${issuanceKey}/pdf`, {
+      headers: { Authorization: this.authHeader() },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    })
+
+    if (res.status === 202 || res.status === 429) {
+      return { status: 'PENDING', retryAfterSeconds: retryAfter(res, 3) }
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let message = text.slice(0, 300)
+      let code: string | undefined
+      try {
+        const j = JSON.parse(text) as { message?: string; code?: string }
+        message = j.message ?? message
+        code = j.code
+      } catch {
+        // 401 은 본문이 없다.
+      }
+      throw new ProviderRejectedError(message || `볼타 오류 ${res.status}`, res.status, code)
+    }
+
+    const body = (await res.json()) as {
+      status?: string
+      downloadUrl?: string | null
+      downloadUrlExpiresAt?: string | null
+      filename?: string | null
+    }
+    if (!body?.downloadUrl) return { status: 'PENDING', retryAfterSeconds: retryAfter(res, 3) }
+    return {
+      status: 'READY',
+      downloadUrl: body.downloadUrl,
+      ...(body.downloadUrlExpiresAt ? { expiresAt: body.downloadUrlExpiresAt } : {}),
+      ...(body.filename ? { filename: body.filename } : {}),
+    }
+  }
+
+  /**
+   * 볼타에 등록된 발급자(공급자) 목록.
+   *
+   * 발급자로 등록되지 않은 공급자로는 발행할 수 없다. 접수 전에 요청의 공급자와
+   * 대조하는 데 쓴다 — findIssuer().
+   */
+  async listIssuers(): Promise<BoltaIssuer[]> {
+    const res = await this.doFetch(`${this.baseUrl}/v1/issuers`, {
+      headers: { Authorization: this.authHeader() },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new ProviderRejectedError(text.slice(0, 300) || `볼타 오류 ${res.status}`, res.status)
+    }
+    const body = (await res.json()) as unknown
+    // 빈 배열로 넘기면 "등록된 발급자 없음"으로 읽힌다. 모양이 다르면 그렇게 말한다.
+    if (!Array.isArray(body)) throw new Error('볼타 발급자 목록 응답이 예상한 형식(배열)이 아닙니다.')
+    return body as BoltaIssuer[]
   }
 
   parseWebhook(payload: unknown): WebhookEvent | null {
@@ -376,6 +480,26 @@ export class BoltaProvider implements TaxInvoiceProvider {
     if (!ip) return false
     return (BOLTA_WEBHOOK_IPS as readonly string[]).includes(ip)
   }
+}
+
+/**
+ * 공급자 사업자번호에 해당하는 발급자를 찾는다. 없으면 undefined.
+ *
+ * 예제 요청 파일의 공급자를 그대로 두는 실수가 흔하다. 볼타가 거절하긴 하지만
+ * 접수 전에 "등록된 발급자는 이것"이라고 짚어주는 편이 빨리 고친다.
+ */
+export function findIssuer(
+  issuers: BoltaIssuer[],
+  supplierNumber: string,
+): BoltaIssuer | undefined {
+  const target = normalizeBusinessNumber(supplierNumber)
+  return issuers.find((it) => normalizeBusinessNumber(it.identificationNumber ?? '') === target)
+}
+
+/** Retry-After 헤더(초). 없거나 이상하면 fallback. */
+function retryAfter(res: Response, fallback: number): number {
+  const seconds = Number(res.headers?.get?.('Retry-After'))
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : fallback
 }
 
 function mapStatus(raw?: string): IssuanceStatus {

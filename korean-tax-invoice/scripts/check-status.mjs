@@ -15,7 +15,8 @@
  * 중복 발행이다.
  *
  * 접수 여부가 궁금하면 --ref 로 관리번호를 조회해라. 관리번호는 우리가
- * 만든 값이라 응답을 못 받았을 때도 항상 손에 있다.
+ * 만든 값이라 응답을 못 받았을 때도 항상 손에 있다. 접수됐으면 issuanceKey 를
+ * 알려주고, 발행까지 끝났으면 발행 결과(ISSUED 등)까지 보여준다.
  */
 
 import './load-env.mjs'
@@ -62,6 +63,7 @@ async function main() {
 
   console.log(`조회 기준: ${refMode ? '관리번호' : 'issuanceKey'} ${key}`)
   console.log(`상태: ${r.status} — ${LABEL[r.status] ?? ''}`)
+  if (refMode && r.issuanceKey) console.log(`issuanceKey: ${r.issuanceKey}`)
   if (r.ntsConfirmNum) {
     // 테스트 키는 test_nts_ 로 시작하는 가짜 번호를 준다.
     const fake = r.ntsConfirmNum.startsWith('test_') ? ' (가상 발행 — 실제 승인번호 아님)' : ''
@@ -77,6 +79,9 @@ async function main() {
   }
   if (r.status === 'UNKNOWN' && refMode) {
     console.log('\n접수되지 않았습니다. 다시 발행을 시도해도 됩니다.')
+  }
+  if (r.status === 'SUBMITTED' && refMode) {
+    console.log('\n접수는 됐고 발행 결과는 아직입니다. 다시 발행하지 말고 잠시 뒤 다시 조회하세요.')
   }
   if (r.status === 'ISSUED' && !r.ntsConfirmNum) {
     console.log('\n국세청 승인번호가 없는 것은 테스트 키(가상 발행)이기 때문입니다.')

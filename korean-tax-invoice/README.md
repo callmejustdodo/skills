@@ -44,6 +44,7 @@ node scripts/preflight.mjs                          # 키·인증서 점검
 node scripts/issue.mjs examples/request.json        # 검증만 (발행 안 함)
 node scripts/issue.mjs examples/request.json --confirm   # 실제 발행
 node scripts/check-status.mjs <issuanceKey>         # 결과 확인
+node scripts/download-pdf.mjs <issuanceKey> --out pdf   # 발행 완료 뒤 PDF 받기
 ```
 
 `--confirm` 이 없으면 아무것도 발행하지 않는다. 실수로 실행됐을 때 아무 일도
@@ -60,7 +61,8 @@ import {
   ProviderUncertainError,
 } from 'korean-tax-invoice'
 
-const check = validateIssueRequest(request, { verified: company.verifiedAt !== null })
+// != null: verifiedAt 이 undefined 여도 "확인 안 됨"으로 막는다
+const check = validateIssueRequest(request, { verified: company.verifiedAt != null })
 if (!check.ok) {
   // 사유는 한국어 배열로 온다. 승인 화면에 그대로 띄울 수 있다.
   return { blocked: check.issues.map((i) => i.message) }
@@ -79,7 +81,9 @@ try {
   if (e instanceof ProviderUncertainError) {
     // 접수 여부 불명. 재요청하면 중복 발행이다.
     const status = await provider.getStatusByReferenceId(refId)
-    // SUBMITTED → 이미 접수됨 / UNKNOWN → 접수 안 됨
+    // 접수 여부는 status !== 'UNKNOWN' 으로 판단한다. SUBMITTED 만 "접수됨"이 아니다:
+    // ISSUED 등 → 발행까지 끝남 / SUBMITTED → 접수됨, 결과 대기 / UNKNOWN → 접수 안 됨
+    // 접수됐으면 status.issuanceKey 로 이후 상태를 따라간다
   }
 }
 ```

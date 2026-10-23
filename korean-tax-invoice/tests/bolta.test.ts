@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BoltaProvider } from '../src/providers/bolta/index.js'
+import { BoltaProvider, findIssuer } from '../src/providers/bolta/index.js'
 import { ProviderRejectedError, ProviderUncertainError } from '../src/core/types.js'
 import type { IssueRequest } from '../src/core/types.js'
 
@@ -43,6 +43,30 @@ function errFetch(status: number, body: string) {
   })) as unknown as typeof fetch
 }
 
+/** 호출마다 다음 응답을 준다. Error 를 넣으면 그 호출에서 던진다. */
+function seqFetch(
+  ...responses: ({ status: number; body: unknown; headers?: Record<string, string> } | Error)[]
+) {
+  const queue = [...responses]
+  return vi.fn(async () => {
+    const next = queue.shift()
+    if (!next) throw new Error('예상하지 못한 fetch 호출')
+    if (next instanceof Error) throw next
+    const text = typeof next.body === 'string' ? next.body : JSON.stringify(next.body)
+    return {
+      ok: next.status >= 200 && next.status < 300,
+      status: next.status,
+      headers: new Headers(next.headers ?? {}),
+      json: async () => JSON.parse(text),
+      text: async () => text,
+    }
+  }) as unknown as typeof fetch
+}
+
+/** n 번째 호출의 URL. */
+function calledUrl(f: typeof fetch, n: number): string {
+  return (f as unknown as { mock: { calls: [string][] } }).mock.calls[n]![0]
+}
 
 /** fetch 목이 실제로 보낸 요청을 꺼낸다. */
 function sentRequest(f: typeof fetch): { url: string; init: RequestInit & { headers: Record<string, string>; body: string } } {
@@ -117,6 +141,15 @@ describe('페이로드', () => {
     expect(body.items[0].tax).toBeNull()
   })
 
+  it('영세율은 세액 0 을 보낸다', async () => {
+    // 확인 화면도 같은 itemTax() 로 0 을 보여준다.
+    const f = okFetch({ issuanceKey: 'K' })
+    await makeProvider(f).submit(makeRequest({ taxType: 'ZERO_RATE' }), 'ref-1')
+
+    const body = sentBody(f)
+    expect(body.items[0].tax).toBe(0)
+  })
+
   it('멱등성 키를 헤더로 보낸다', async () => {
     const f = okFetch({ issuanceKey: 'K' })
     await makeProvider(f).submit(makeRequest(), 'ref-abc')
@@ -158,6 +191,24 @@ describe('오류 구분 — 중복 발행 방지의 핵심', () => {
     )
   })
 
+  it('2xx 인데 본문을 못 읽으면 불확실로 던진다', async () => {
+    // 접수됐을 수 있다. 일반 오류로 새면 "거절"처럼 읽혀 재요청으로 이어진다.
+    const f = seqFetch({ status: 200, body: '<html>gateway</html>' })
+    await expect(makeProvider(f).submit(makeRequest(), 'ref-1')).rejects.toBeInstanceOf(
+      ProviderUncertainError,
+    )
+  })
+
+  it('2xx 본문이 null 이거나 키가 문자열이 아니면 불확실로 던진다', async () => {
+    // null 이면 body.issuanceKey 에서 TypeError 가 나 일반 오류로 샜다.
+    for (const body of ['null', { issuanceKey: { x: 1 } }, { issuanceKey: '' }]) {
+      const f = seqFetch({ status: 200, body })
+      await expect(makeProvider(f).submit(makeRequest(), 'ref-1')).rejects.toBeInstanceOf(
+        ProviderUncertainError,
+      )
+    }
+  })
+
   it('불확실 오류는 관리번호를 들고 있다', async () => {
     // 조회로 접수 여부를 확인하려면 이 값이 필요하다.
     const f = errFetch(503, '{}')
@@ -190,6 +241,129 @@ describe('상태 조회', () => {
   it('404 는 UNKNOWN', async () => {
     const r = await makeProvider(errFetch(404, '{}')).getStatus('K')
     expect(r.status).toBe('UNKNOWN')
+  })
+})
+
+describe('관리번호 조회', () => {
+  // 실측(2026-09) 접수 확인 응답. message 는 상태가 아니라 안내문이다.
+  const accepted = {
+    status: 200,
+    body: {
+      clientReferenceId: 'ref-1',
+      issuanceKey: 'IssuanceKey_K',
+      message: '요청이 처리되었습니다. 성공/실패 여부는 발행된 세금계산서를 통해 확인해주세요.',
+    },
+  }
+
+  it('발행까지 끝났으면 ISSUED 와 issuanceKey 를 준다', async () => {
+    // 접수 확인에서 멈추면 발행이 끝난 건도 영원히 SUBMITTED 로 보였다.
+    const f = seqFetch(accepted, {
+      status: 200,
+      body: { issuanceKey: 'IssuanceKey_K', issuedAt: '2026-10-23T16:49:33Z', ntsTransactionId: 'test_nts_K' },
+    })
+    const r = await makeProvider(f).getStatusByReferenceId('ref-1')
+
+    expect(r).toMatchObject({ status: 'ISSUED', issuanceKey: 'IssuanceKey_K', ntsConfirmNum: 'test_nts_K' })
+    expect(calledUrl(f, 0)).toContain('clientReferenceId=ref-1')
+    expect(calledUrl(f, 1)).toMatch(/\/v1\/taxInvoices\/IssuanceKey_K$/)
+  })
+
+  it('아직 발행 전이면 SUBMITTED 와 issuanceKey 를 준다', async () => {
+    // issuanceKey 가 있어야 응답을 못 받은 쪽도 이후 상태를 따라갈 수 있다.
+    const f = seqFetch(accepted, { status: 404, body: '{}' })
+    const r = await makeProvider(f).getStatusByReferenceId('ref-1')
+    expect(r).toEqual({ status: 'SUBMITTED', issuanceKey: 'IssuanceKey_K' })
+  })
+
+  it('후속 조회가 실패해도 SUBMITTED 로 답한다', async () => {
+    // 접수됐다는 사실은 이미 확인했다. "재요청 금지" 쪽으로 답해야 안전하다.
+    const f = seqFetch(accepted, new Error('ECONNRESET'))
+    const r = await makeProvider(f).getStatusByReferenceId('ref-1')
+    expect(r).toEqual({ status: 'SUBMITTED', issuanceKey: 'IssuanceKey_K' })
+  })
+
+  it('없는 관리번호는 UNKNOWN 이고 후속 조회를 하지 않는다', async () => {
+    const f = seqFetch({ status: 400, body: '{"code":"INVALID_REQUEST","message":"존재하지 않는 요청"}' })
+    const r = await makeProvider(f).getStatusByReferenceId('ref-none')
+    expect(r).toEqual({ status: 'UNKNOWN' })
+    expect((f as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+})
+
+describe('PDF 조회', () => {
+  it('준비되면 다운로드 주소와 파일 이름을 준다', async () => {
+    const f = seqFetch({
+      status: 200,
+      body: {
+        issuanceKey: 'K',
+        status: 'READY',
+        downloadUrl: 'https://files.example/k.pdf',
+        downloadUrlExpiresAt: '2026-10-24T00:05:00Z',
+        filename: '전자세금계산서_20261024_고객사.pdf',
+      },
+    })
+    const r = await makeProvider(f).getPdf('K')
+    expect(r).toEqual({
+      status: 'READY',
+      downloadUrl: 'https://files.example/k.pdf',
+      expiresAt: '2026-10-24T00:05:00Z',
+      filename: '전자세금계산서_20261024_고객사.pdf',
+    })
+    expect(calledUrl(f, 0)).toMatch(/\/v1\/taxInvoices\/K\/pdf$/)
+  })
+
+  it('만드는 중(202)이면 Retry-After 를 담아 PENDING', async () => {
+    const f = seqFetch({ status: 202, body: { status: 'PENDING', downloadUrl: null }, headers: { 'Retry-After': '2' } })
+    await expect(makeProvider(f).getPdf('K')).resolves.toEqual({ status: 'PENDING', retryAfterSeconds: 2 })
+  })
+
+  it('동시 생성이 많으면(429) 역시 기다렸다 다시', async () => {
+    const f = seqFetch({ status: 429, body: { code: 'TOO_MANY_IN_FLIGHT' }, headers: { 'Retry-After': '60' } })
+    await expect(makeProvider(f).getPdf('K')).resolves.toEqual({ status: 'PENDING', retryAfterSeconds: 60 })
+  })
+
+  it('발행 전이면 거절로 던진다', async () => {
+    const f = seqFetch({
+      status: 400,
+      body: { code: 'TAX_INVOICE_RETRIEVE_NOT_AVAILABLE', message: 'PDF를 받을 수 없는 발행 건입니다.' },
+    })
+    await expect(makeProvider(f).getPdf('K')).rejects.toMatchObject({
+      status: 400,
+      code: 'TAX_INVOICE_RETRIEVE_NOT_AVAILABLE',
+    })
+  })
+})
+
+describe('발급자 대조', () => {
+  const issuers = [
+    { identificationNumber: '1234567890', organizationName: '예시상사', representativeName: '김예시' },
+  ]
+
+  it('하이픈 유무와 상관없이 사업자번호로 찾는다', () => {
+    expect(findIssuer(issuers, '123-45-67890')?.organizationName).toBe('예시상사')
+    expect(findIssuer(issuers, '1234567890')?.organizationName).toBe('예시상사')
+  })
+
+  it('등록되지 않은 공급자는 undefined', () => {
+    // 예제 파일의 공급자를 그대로 두면 여기에 걸린다.
+    expect(findIssuer(issuers, '243-13-02906')).toBeUndefined()
+  })
+
+  it('발급자 목록을 가져온다', async () => {
+    const f = seqFetch({ status: 200, body: issuers })
+    await expect(makeProvider(f).listIssuers()).resolves.toEqual(issuers)
+    expect(calledUrl(f, 0)).toMatch(/\/v1\/issuers$/)
+  })
+
+  it('발급자 목록 조회가 거절되면 던진다', async () => {
+    const f = seqFetch({ status: 401, body: '{"message":"인증 실패"}' })
+    await expect(makeProvider(f).listIssuers()).rejects.toBeInstanceOf(ProviderRejectedError)
+  })
+
+  it('발급자 목록이 배열이 아니면 던진다', async () => {
+    // 빈 배열로 넘기면 "등록된 발급자 없음"이라는 틀린 안내가 나간다.
+    const f = seqFetch({ status: 200, body: { items: [] } })
+    await expect(makeProvider(f).listIssuers()).rejects.toThrow(/배열/)
   })
 })
 
