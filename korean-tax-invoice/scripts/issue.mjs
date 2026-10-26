@@ -192,6 +192,13 @@ async function main() {
       } catch {
         uncertain(`거절 응답(HTTP ${e.status})을 받았지만 이 관리번호의 접수 여부를 확인하지 못했습니다.`, refId)
       }
+      if (prior.status === 'FAILED') {
+        // 볼타가 요청 기록은 남겼지만 접수 단계에서 실패해 발행하지 않은 경우(예: 포인트 부족 402).
+        console.error(`\n거절됨 (HTTP ${e.status}): ${e.message}`)
+        console.error('  접수 단계에서 실패해 발행되지 않았습니다.')
+        console.error('  볼타는 같은 관리번호를 다시 받지 않습니다. 원인을 고친 뒤 새 invoiceId 로 요청하세요.')
+        process.exit(1)
+      }
       if (prior.status !== 'UNKNOWN') {
         console.error(`\n이 관리번호로 이미 접수된 건이 있습니다: ${refId}`)
         console.error(`  상태 ${prior.status}${prior.issuanceKey ? `, issuanceKey ${prior.issuanceKey}` : ''}`)

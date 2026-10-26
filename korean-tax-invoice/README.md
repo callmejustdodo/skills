@@ -83,6 +83,7 @@ try {
     const status = await provider.getStatusByReferenceId(refId)
     // 접수 여부는 status !== 'UNKNOWN' 으로 판단한다. SUBMITTED 만 "접수됨"이 아니다:
     // ISSUED 등 → 발행까지 끝남 / SUBMITTED → 접수됨, 결과 대기 / UNKNOWN → 접수 안 됨
+    // FAILED → 접수 단계에서 실패해 발행 안 됨. 같은 관리번호는 다시 못 쓰니 새 관리번호로
     // 접수됐으면 status.issuanceKey 로 이후 상태를 따라간다
   }
 }

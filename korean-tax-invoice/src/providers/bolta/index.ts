@@ -38,6 +38,12 @@ const DEFAULT_BASE_URL = 'https://xapi.bolta.io'
  */
 export const BOLTA_WEBHOOK_IPS = ['43.201.136.252'] as const
 
+/**
+ * 관리번호 조회에서 "접수 단계에서 실패" 안내문. 접수 성공 안내문("성공/실패 여부는
+ * 발행된 세금계산서를 통해 확인해주세요")에도 "실패"가 들어 있어 그 단어만으로는 못 가른다.
+ */
+const RECEPTION_FAILED = /접수 단계에서 실패|발행되지 않았습니다/
+
 interface BoltaParty {
   identificationNumber: string
   organizationName: string
@@ -348,6 +354,18 @@ export class BoltaProvider implements TaxInvoiceProvider {
     }
 
     if (!body.issuanceKey) return { status: 'UNKNOWN' }
+
+    // 접수 단계에서 실패한 요청도 issuanceKey 를 받는다. 실측(2026-10, 라이브 키, 포인트 부족 402):
+    //
+    //   "요청이 접수 단계에서 실패해 발행되지 않았습니다. 이 건은 세금계산서로 조회되지
+    //    않고, 같은 clientReferenceId 로는 다시 요청할 수 없습니다. 새 clientReferenceId 로
+    //    요청해주세요."
+    //
+    // 상태 필드가 없어 안내문으로 가른다. 이 건은 발행되지 않았고 앞으로도 안 된다 —
+    // 이걸 "접수됨"으로 읽으면 다시 보내지 말라는 틀린 안내가 나간다.
+    if (body.message && RECEPTION_FAILED.test(body.message)) {
+      return { status: 'FAILED', issuanceKey: body.issuanceKey, failureReason: body.message }
+    }
 
     // 접수는 확인됐다. 발행까지 끝났는지는 issuanceKey 로 다시 물어야 안다.
     // 여기서 멈추면 발행이 끝난 건도 영원히 SUBMITTED 로 보이고, 응답을 못

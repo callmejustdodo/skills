@@ -241,6 +241,24 @@ describe('--confirm 종료 코드', () => {
     expect(r.out).toContain('IssuanceKey_OLD')
   })
 
+  it('거절됐고 관리번호가 "접수 단계에서 실패"면 1 과 새 invoiceId 안내', async () => {
+    // 포인트 부족(402)이 이렇게 온다. "이미 접수됨"(3)으로 읽으면 안 된다 — 발행되지 않았다.
+    const r = await confirmRun({
+      issuers: registered,
+      issue: { status: 402, body: { message: '포인트 잔액이 부족합니다.' } },
+      refStatus: {
+        status: 200,
+        body: {
+          issuanceKey: 'IssuanceKey_F',
+          message: '요청이 접수 단계에서 실패해 발행되지 않았습니다. 새 clientReferenceId 로 요청해주세요.',
+        },
+      },
+    })
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('발행되지 않았습니다')
+    expect(r.out).toContain('새 invoiceId')
+  })
+
   it('거절 뒤 관리번호 조회까지 실패하면 2', async () => {
     const r = await confirmRun({
       issuers: registered,

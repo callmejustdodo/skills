@@ -282,6 +282,23 @@ describe('관리번호 조회', () => {
     expect(r).toEqual({ status: 'SUBMITTED', issuanceKey: 'IssuanceKey_K' })
   })
 
+  it('접수 단계에서 실패한 건은 FAILED 이고 후속 조회를 하지 않는다', async () => {
+    // 실측(2026-10, 라이브 키, 포인트 부족 402). issuanceKey 가 있어도 발행되지 않았다.
+    const f = seqFetch({
+      status: 200,
+      body: {
+        clientReferenceId: 'ref-1',
+        issuanceKey: 'IssuanceKey_F',
+        message:
+          '요청이 접수 단계에서 실패해 발행되지 않았습니다. 이 건은 세금계산서로 조회되지 않고, 같은 clientReferenceId 로는 다시 요청할 수 없습니다. 새 clientReferenceId 로 요청해주세요.',
+      },
+    })
+    const r = await makeProvider(f).getStatusByReferenceId('ref-1')
+    expect(r).toMatchObject({ status: 'FAILED', issuanceKey: 'IssuanceKey_F' })
+    expect(r.failureReason).toContain('새 clientReferenceId')
+    expect((f as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+
   it('없는 관리번호는 UNKNOWN 이고 후속 조회를 하지 않는다', async () => {
     const f = seqFetch({ status: 400, body: '{"code":"INVALID_REQUEST","message":"존재하지 않는 요청"}' })
     const r = await makeProvider(f).getStatusByReferenceId('ref-none')

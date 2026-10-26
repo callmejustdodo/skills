@@ -176,7 +176,9 @@ terminal(command="node scripts/check-status.mjs --ref <관리번호>")
 
 접수됐으면 `issuanceKey` 를 함께 알려주고, 발행까지 끝났으면 `ISSUED` 로 나온다.
 `SUBMITTED` 면 접수는 됐고 결과 대기 중이니 기다린다. `UNKNOWN` 이면 접수되지
-않았으니 다시 시도해도 된다.
+않았으니 다시 시도해도 된다. `FAILED` 는 접수 단계에서 실패해(예: 포인트 부족 402)
+발행되지 않은 건이다 — 볼타가 같은 관리번호를 다시 받지 않으므로 원인을 고친 뒤
+**새 invoiceId** 로 요청한다.
 
 ### 멱등성 키는 재사용한다
 
