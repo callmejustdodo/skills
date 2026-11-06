@@ -1,24 +1,24 @@
-# dodo-skills
+# Dodo’s Skills
 
 Reusable AI agent skills for Claude Code and other coding agents. Includes a meeting follow-up email drafter, a voice memo → Notion pipeline, a macOS performance doctor, a product planning interviewer, a Slack-approved card-news publisher for Instagram and Threads, and a Korean e-tax-invoice issuer.
 
-[![skills.sh](https://skills.sh/b/callmejustdodo/dodo-skills)](https://skills.sh/callmejustdodo/dodo-skills)
+[![skills.sh](https://skills.sh/b/callmejustdodo/skills)](https://skills.sh/callmejustdodo/skills)
 
 ## Install
 
 ```bash
-npx skills add callmejustdodo/dodo-skills
+npx skills add callmejustdodo/skills
 ```
 
 Or install a single skill:
 
 ```bash
-npx skills add callmejustdodo/dodo-skills --skill followup-mail
-npx skills add callmejustdodo/dodo-skills --skill voice-memo-2-meeting-note
-npx skills add callmejustdodo/dodo-skills --skill mac-lag-doctor
-npx skills add callmejustdodo/dodo-skills --skill product-planning
-npx skills add callmejustdodo/dodo-skills --skill card-news-publish
-npx skills add callmejustdodo/dodo-skills --skill korean-tax-invoice
+npx skills add callmejustdodo/skills --skill followup-mail
+npx skills add callmejustdodo/skills --skill voice-memo-2-meeting-note
+npx skills add callmejustdodo/skills --skill mac-lag-doctor
+npx skills add callmejustdodo/skills --skill product-planning
+npx skills add callmejustdodo/skills --skill card-news-publish
+npx skills add callmejustdodo/skills --skill korean-tax-invoice
 ```
 
 ## Skills
@@ -51,8 +51,8 @@ npx skills add callmejustdodo/dodo-skills --skill korean-tax-invoice
 1. **Clone and link:**
 
 ```bash
-git clone https://github.com/callmejustdodo/dodo-skills.git
-cd dodo-skills
+git clone https://github.com/callmejustdodo/skills.git
+cd skills
 ./link.sh
 ```
 
@@ -202,3 +202,7 @@ If you prefer not to use `npx skills add`, you can symlink directly:
 ## License
 
 MIT
+
+## Website
+
+Browse the collection at [callmejustdodo.com/skills](https://callmejustdodo.com/skills). Changes to `README.md` or a root-level `<skill-name>/SKILL.md` on `main` trigger an automatic website deployment. A new skill does not need a README table entry to appear on the website; its frontmatter description is used when no table summary exists.
