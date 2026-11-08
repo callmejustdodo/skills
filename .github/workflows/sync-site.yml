@@ -1,0 +1,31 @@
+name: Sync Dodo’s Skills site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - "**/SKILL.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-dodos-skills-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger website rebuild
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.SITE_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOOK_URL"
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-all-errors \
+            --request POST "$DEPLOY_HOOK_URL" \
+            | jq -e ".job.id and .job.state" >/dev/null
