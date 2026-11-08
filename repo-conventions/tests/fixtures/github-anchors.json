@@ -1,0 +1,166 @@
+[
+ [
+  "_config.yml",
+  "_configyml"
+ ],
+ [
+  "Foo\\_bar",
+  "foo_bar"
+ ],
+ [
+  "MAX\\_RETRIES",
+  "max_retries"
+ ],
+ [
+  "snake_case_ names",
+  "snake_case_-names"
+ ],
+ [
+  "![logo](logo.png) Project",
+  "-project"
+ ],
+ [
+  "<img src=\"logo.png\" width=\"20\"> Project",
+  "-project"
+ ],
+ [
+  "<a name=\"intro\"></a> Introduction",
+  "-introduction"
+ ],
+ [
+  ":rocket: Launch",
+  "rocket-launch"
+ ],
+ [
+  "Foo &mdash; Bar",
+  "foo--bar"
+ ],
+ [
+  "Foo&nbsp;Bar",
+  "foobar"
+ ],
+ [
+  "O(n²) time",
+  "on-time"
+ ],
+ [
+  "½ cup and ① step",
+  "-cup-and--step"
+ ],
+ [
+  "Result<T, E>",
+  "resultt-e"
+ ],
+ [
+  "a < b > c",
+  "a--b--c"
+ ],
+ [
+  "See <https://example.com>",
+  "see-httpsexamplecom"
+ ],
+ [
+  "\\<Component\\>",
+  "component"
+ ],
+ [
+  "⚙️ Settings",
+  "️-settings"
+ ],
+ [
+  "Ⅻ roman",
+  "ⅻ-roman"
+ ],
+ [
+  "Copyright &copy; 2024",
+  "copyright--2024"
+ ],
+ [
+  "Press <kbd>Ctrl</kbd>+<kbd>C</kbd>",
+  "press-ctrlc"
+ ],
+ [
+  "Line<br>break",
+  "linebreak"
+ ],
+ [
+  "H<sub>2</sub>O",
+  "h2o"
+ ],
+ [
+  "~~old~~ new",
+  "old-new"
+ ],
+ [
+  "**Bold** *it* ***both***",
+  "bold-it-both"
+ ],
+ [
+  "C# and F#",
+  "c-and-f"
+ ],
+ [
+  "100% done!",
+  "100-done"
+ ],
+ [
+  "Café — naïve",
+  "café--naïve"
+ ],
+ [
+  "Ünïcödé Ελληνικά Кириллица",
+  "ünïcödé-ελληνικά-кириллица"
+ ],
+ [
+  "日本語の見出し",
+  "日本語の見出し"
+ ],
+ [
+  "tab\there",
+  "tabhere"
+ ],
+ [
+  "\"quoted\" 'single'",
+  "quoted-single"
+ ],
+ [
+  "Emoji 🎉 party",
+  "emoji--party"
+ ],
+ [
+  "Version 1.2.3",
+  "version-123"
+ ],
+ [
+  "foo_bar_baz",
+  "foo_bar_baz"
+ ],
+ [
+  "__init__.py",
+  "initpy"
+ ],
+ [
+  "__tests__ directory",
+  "tests-directory"
+ ],
+ [
+  "Ⅳ and ⅳ",
+  "ⅳ-and-ⅳ"
+ ],
+ [
+  "x³",
+  "x"
+ ],
+ [
+  "Ⓐ option",
+  "ⓐ-option"
+ ],
+ [
+  "Family 👨‍👩‍👧 setup",
+  "family-‍‍-setup"
+ ],
+ [
+  "٣ Arabic-Indic digit",
+  "٣-arabic-indic-digit"
+ ]
+]

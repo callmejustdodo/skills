@@ -1,0 +1,65 @@
+name: Bug report
+description: "{{PROJECT_NAME}} behaves differently from what its documentation or specification says."
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the product does not do what its documentation or specification says. To propose different behavior instead, open a Feature idea.
+
+        Do not report security vulnerabilities in an issue; tell the maintainers privately. Remove tokens, cookies, email addresses and other personal data from everything you paste.
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: What you saw, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened. Link the document or specification section when one applies.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  # FILL: one option per place the product runs, taken from the repository (for example "Web app", "CLI", "API"). Keep "Not sure". Delete this whole field when the product has only one surface.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Where the problem appears.
+      multiple: true
+      options:
+        - "{{SURFACE}}"
+        - Not sure
+    validations:
+      required: true
+  # FILL: one option per environment the project really has (for example "Production", "Preview deployment", "Local development"). Delete this whole field when there is only one.
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - "{{ENVIRONMENT}}"
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or deployment
+      description: The commit SHA, version or deployment URL where it happened, if known.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Redact private data before pasting.
