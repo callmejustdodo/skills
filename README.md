@@ -1,6 +1,6 @@
 # Dodo’s Skills
 
-Reusable AI agent skills for Claude Code and other coding agents. Includes a meeting follow-up email drafter, a voice memo → Notion pipeline, a macOS performance doctor, a product planning interviewer, a Slack-approved card-news publisher for Instagram and Threads, a Korean e-tax-invoice issuer, and a client-call debrief that finds a client's hurdles and plans follow-ups.
+Reusable AI agent skills for Claude Code and other coding agents. Includes a meeting follow-up email drafter, a voice memo → Notion pipeline, a macOS performance doctor, a product planning interviewer, a Slack-approved card-news publisher for Instagram and Threads, a Korean e-tax-invoice issuer, an ntfy push notification for when Claude Code finishes, and a client-call debrief that finds a client's hurdles and plans follow-ups.
 
 [![skills.sh](https://skills.sh/b/callmejustdodo/skills)](https://skills.sh/callmejustdodo/skills)
 
@@ -19,6 +19,7 @@ npx skills add callmejustdodo/skills --skill mac-lag-doctor
 npx skills add callmejustdodo/skills --skill product-planning
 npx skills add callmejustdodo/skills --skill card-news-publish
 npx skills add callmejustdodo/skills --skill korean-tax-invoice
+npx skills add callmejustdodo/skills --skill ntfy-done-hook
 npx skills add callmejustdodo/skills --skill client-call-debrief
 ```
 
@@ -32,6 +33,7 @@ npx skills add callmejustdodo/skills --skill client-call-debrief
 | [`product-planning`](./product-planning) | Interviews you, writes planning documents, gets mockup approval, and produces an AI implementation plan. |
 | [`card-news-publish`](./card-news-publish) | Sends a Figma card-news deck to Slack for approval and publishes it as an Instagram + Threads carousel on [발행]. |
 | [`korean-tax-invoice`](./korean-tax-invoice) | Issues Korean e-tax invoices (세금계산서) via Bolta, with guards against duplicate and wrong issuance. Vendored from [sdkfile/korean-tax-invoice](https://github.com/sdkfile/korean-tax-invoice). |
+| [`ntfy-done-hook`](./ntfy-done-hook) | Pushes an [ntfy](https://ntfy.sh) notification to your phone when Claude Code finishes or needs your answer, with a summary of the last work, the session, and the device. |
 | [`client-call-debrief`](./client-call-debrief) | Transcribes a client sales call (ElevenLabs Scribe v2), writes minutes, finds the client's psychological hurdles with quoted evidence, and plans follow-up actions plus a message draft (never sent). Saves to Obsidian. |
 
 ## Prerequisites
@@ -48,6 +50,7 @@ npx skills add callmejustdodo/skills --skill client-call-debrief
 | Node.js 18+ + one-time build | korean-tax-invoice | `cd korean-tax-invoice && npm install && npm run build` |
 | `OBSIDIAN_VAULT` | client-call-debrief | Vault root path in the repo `.env` |
 | `BOLTA_API_KEY` | korean-tax-invoice | [Bolta](https://app.bolta.io) → 개발자센터 → API 키 (`test_` = virtual, `live_` = real); goes in `korean-tax-invoice/.env` or your shell |
+| `jq`, `curl` + the [ntfy app](https://ntfy.sh) | ntfy-done-hook | Both CLIs ship with macOS 15+; subscribe to your topic in the app |
 
 ## Setup
 
@@ -152,20 +155,6 @@ The skill:
 
 Keys live in a gitignored `card-news-publish/.env` (template: `card-news-publish/.env.example`). Missing platform keys make [발행] skip that platform and say why.
 
-### client-call-debrief
-
-Trigger by saying things like:
-- "클라이언트 통화 녹음 정리해줘", "이 세일즈 콜 디브리프 해줘"
-- "고객 허들 찾아서 후속 액션 정해줘"
-
-The skill:
-1. Transcribes the call with Scribe v2 (diarized; `--roles` labels a 1:1 call as `agent`/`customer`)
-2. Computes call signals: talk share, client response delays, and hurdle cue words in the client's lines (`scripts/analyze_call.py`, no API calls)
-3. Writes minutes as thematic Q&A, the client's hurdles (type, strength, quoted evidence, a question to check it), deal temperature, prioritized follow-up actions, a follow-up message draft, and feedback on your own call habits
-4. Saves a debrief note and a transcript note to `$OBSIDIAN_VAULT/50 Meetings/`, and compares with earlier debriefs for the same client
-
-It never sends the follow-up message. It can hand a mail version to `followup-mail` for a Gmail draft.
-
 ### korean-tax-invoice
 
 Trigger by saying things like:
@@ -180,6 +169,49 @@ cp .env.example .env    # then set BOLTA_API_KEY=test_...
 ```
 
 The skill runs a preflight, validates the request, shows you exactly what will be issued, and only issues with `--confirm` after you say yes. The key lives in a gitignored `korean-tax-invoice/.env`; a `BOLTA_API_KEY` exported in your shell takes precedence over it.
+
+### ntfy-done-hook
+
+Trigger by saying things like:
+- "작업 끝나면 ntfy.sh/my-topic으로 알림 보내줘", "폰으로 완료 알림 받고 싶어"
+- "notify me when Claude is done"
+
+Or run the installer yourself:
+
+```bash
+ntfy-done-hook/scripts/install.sh <topic>                 # install or change the topic
+ntfy-done-hook/scripts/install.sh <topic> --server https://ntfy.example.com
+ntfy-done-hook/scripts/install.sh <topic> --no-summary    # also: --no-session, --no-device
+ntfy-done-hook/scripts/install.sh --uninstall
+```
+
+A finished turn arrives as **작업 완료** with a one-line summary of the work. A turn that ends with a question for you arrives as **답변 필요** (high priority), with the question. A permission prompt arrives as **확인 필요**. Each notification also shows the project, the session name, and the device and environment:
+
+```
+Claude Code 답변 필요
+❓ 테스트도 돌려볼까요?
+📝 로그인 리다이렉트 버그를 고쳤어요.
+📁 webapp · 💬 Fix login redirect bug
+🖥️ Dodo mini · Desktop 앱 (SSH)
+```
+
+The installer copies the hook script to `~/.claude/hooks/ntfy-done-hook.sh` and adds a `Stop` and a `Notification` hook to `~/.claude/settings.json`. It keeps every existing setting and hook, and backs up the settings file first. Re-running it replaces its own hooks instead of adding more. It finishes by sending a real test notification.
+
+Topics on ntfy.sh are public, and summaries and session names come from your conversations. Choose a topic name that is hard to guess, or turn those parts off.
+
+### client-call-debrief
+
+Trigger by saying things like:
+- "클라이언트 통화 녹음 정리해줘", "이 세일즈 콜 디브리프 해줘"
+- "고객 허들 찾아서 후속 액션 정해줘"
+
+The skill:
+1. Transcribes the call with Scribe v2 (diarized; `--roles` labels a 1:1 call as `agent`/`customer`)
+2. Computes call signals: talk share, client response delays, and hurdle cue words in the client's lines (`scripts/analyze_call.py`, no API calls)
+3. Writes minutes as thematic Q&A, the client's hurdles (type, strength, quoted evidence, a question to check it), deal temperature, prioritized follow-up actions, a follow-up message draft, and feedback on your own call habits
+4. Saves a debrief note and a transcript note to `$OBSIDIAN_VAULT/50 Meetings/`, and compares with earlier debriefs for the same client
+
+It never sends the follow-up message. It can hand a mail version to `followup-mail` for a Gmail draft.
 
 ## Config (`.env`)
 
