@@ -1,6 +1,6 @@
 # Dodo’s Skills
 
-Reusable AI agent skills for Claude Code and other coding agents. Includes a meeting follow-up email drafter, a voice memo → Notion pipeline, a macOS performance doctor, a product planning interviewer, a Slack-approved card-news publisher for Instagram and Threads, a Korean e-tax-invoice issuer, and an ntfy push notification for when Claude Code finishes.
+Reusable AI agent skills for Claude Code and other coding agents. Includes a meeting follow-up email drafter, a voice memo → Notion pipeline, a macOS performance doctor, a product planning interviewer, a Slack-approved card-news publisher for Instagram and Threads, a Korean e-tax-invoice issuer, an ntfy push notification for when Claude Code finishes, and a client-call debrief that finds a client's hurdles and plans follow-ups.
 
 [![skills.sh](https://skills.sh/b/callmejustdodo/skills)](https://skills.sh/callmejustdodo/skills)
 
@@ -20,6 +20,7 @@ npx skills add callmejustdodo/skills --skill product-planning
 npx skills add callmejustdodo/skills --skill card-news-publish
 npx skills add callmejustdodo/skills --skill korean-tax-invoice
 npx skills add callmejustdodo/skills --skill ntfy-done-hook
+npx skills add callmejustdodo/skills --skill client-call-debrief
 ```
 
 ## Skills
@@ -33,6 +34,7 @@ npx skills add callmejustdodo/skills --skill ntfy-done-hook
 | [`card-news-publish`](./card-news-publish) | Sends a Figma card-news deck to Slack for approval and publishes it as an Instagram + Threads carousel on [발행]. |
 | [`korean-tax-invoice`](./korean-tax-invoice) | Issues Korean e-tax invoices (세금계산서) via Bolta, with guards against duplicate and wrong issuance. Vendored from [sdkfile/korean-tax-invoice](https://github.com/sdkfile/korean-tax-invoice). |
 | [`ntfy-done-hook`](./ntfy-done-hook) | Pushes an [ntfy](https://ntfy.sh) notification to your phone when Claude Code finishes or needs your answer, with a summary of the last work, the session, and the device. |
+| [`client-call-debrief`](./client-call-debrief) | Transcribes a client sales call (ElevenLabs Scribe v2), writes minutes, finds the client's psychological hurdles with quoted evidence, and plans follow-up actions plus a message draft (never sent). Saves to Obsidian. |
 
 ## Prerequisites
 
@@ -40,12 +42,13 @@ npx skills add callmejustdodo/skills --skill ntfy-done-hook
 |------------|-------------|---------|
 | [`gws`](https://github.com/nicholasgasior/gws) | followup-mail | See gws docs |
 | [`ntn`](https://ntn.dev) | voice-memo-2-meeting-note | `curl -fsSL https://ntn.dev \| bash` |
-| `ELEVENLABS_API_KEY` | voice-memo-2-meeting-note | [elevenlabs.io](https://elevenlabs.io) |
+| `ELEVENLABS_API_KEY` | voice-memo-2-meeting-note, client-call-debrief | [elevenlabs.io](https://elevenlabs.io) |
 | `ffprobe` | voice-memo-2-meeting-note | `brew install ffmpeg` |
-| `python3` + `elevenlabs` SDK | voice-memo-2-meeting-note | `pip install elevenlabs` |
+| `python3` + `elevenlabs` SDK | voice-memo-2-meeting-note, client-call-debrief | `pip install elevenlabs` |
 | [`uv`](https://docs.astral.sh/uv/) | card-news-publish | `brew install uv` |
 | Slack app (Socket Mode), Meta Instagram/Threads tokens, Supabase project | card-news-publish | See [`card-news-publish/SKILL.md`](./card-news-publish/SKILL.md); keys go in `card-news-publish/.env` |
 | Node.js 18+ + one-time build | korean-tax-invoice | `cd korean-tax-invoice && npm install && npm run build` |
+| `OBSIDIAN_VAULT` | client-call-debrief | Vault root path in the repo `.env` |
 | `BOLTA_API_KEY` | korean-tax-invoice | [Bolta](https://app.bolta.io) → 개발자센터 → API 키 (`test_` = virtual, `live_` = real); goes in `korean-tax-invoice/.env` or your shell |
 | `jq`, `curl` + the [ntfy app](https://ntfy.sh) | ntfy-done-hook | Both CLIs ship with macOS 15+; subscribe to your topic in the app |
 
@@ -196,6 +199,20 @@ The installer copies the hook script to `~/.claude/hooks/ntfy-done-hook.sh` and 
 
 Topics on ntfy.sh are public, and summaries and session names come from your conversations. Choose a topic name that is hard to guess, or turn those parts off.
 
+### client-call-debrief
+
+Trigger by saying things like:
+- "클라이언트 통화 녹음 정리해줘", "이 세일즈 콜 디브리프 해줘"
+- "고객 허들 찾아서 후속 액션 정해줘"
+
+The skill:
+1. Transcribes the call with Scribe v2 (diarized; `--roles` labels a 1:1 call as `agent`/`customer`)
+2. Computes call signals: talk share, client response delays, and hurdle cue words in the client's lines (`scripts/analyze_call.py`, no API calls)
+3. Writes minutes as thematic Q&A, the client's hurdles (type, strength, quoted evidence, a question to check it), deal temperature, prioritized follow-up actions, a follow-up message draft, and feedback on your own call habits
+4. Saves a debrief note and a transcript note to `$OBSIDIAN_VAULT/50 Meetings/`, and compares with earlier debriefs for the same client
+
+It never sends the follow-up message. It can hand a mail version to `followup-mail` for a Gmail draft.
+
 ## Config (`.env`)
 
 Personal values — emails, Notion workspace/database/data-source IDs — live in a
@@ -212,6 +229,7 @@ Key variables:
 | `NOTION_WS_LEGACY` | Secondary/legacy workspace UUID |
 | `NOTION_PRIMARY_MEETING_DB` | Meeting Notes database ID |
 | `NOTION_PRIMARY_MEETING_DS` | Meeting Notes data_source ID |
+| `OBSIDIAN_VAULT` | Obsidian vault root for client-call-debrief notes |
 
 See `.env.example` for the full list.
 
