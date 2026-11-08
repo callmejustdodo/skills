@@ -1,0 +1,63 @@
+name: Bug report
+description: A skill behaves differently from what its SKILL.md or the README says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when a skill does not do what its `SKILL.md` or the README says. To propose different behavior instead, open a Feature idea.
+
+        Do not report security vulnerabilities in an issue; tell the maintainers privately. Remove tokens, cookies, email addresses and other personal data from everything you paste.
+  - type: input
+    id: skill
+    attributes:
+      label: Skill
+      description: The skill's directory name, for example `korean-tax-invoice`.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: What you saw, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened. Link the SKILL.md or README section when one applies.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      description: The agent that ran the skill.
+      options:
+        - Claude Code
+        - Codex
+        - Other agent
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or version
+      description: The commit SHA, or the skill's `metadata.version` in its SKILL.md, if known.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Redact private data before pasting.

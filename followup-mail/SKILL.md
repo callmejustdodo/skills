@@ -97,4 +97,4 @@ gws gmail +send \
 
 ## See Also
 - [TEMPLATE.md](./TEMPLATE.md) — fill-in-the-blank body template
-- [gws-gmail-send](../gws-gmail-send/SKILL.md) — underlying send/draft command
+- [gws-gmail-send](https://github.com/nicholasgasior/gws) — underlying send/draft command (a skill installed with gws, not in this repo)
